@@ -189,7 +189,9 @@ class StatementMachine:
             self.checks += 1
             if ol + cr - dr != cl:
                 self._fail(f"{tag}: opening {ol} + credits {cr} - debits {dr} = {ol + cr - dr} != closing {cl}")
-        if "balance" in self.out["emit"]:
+        mode = self.out.get("balance_records", "no_activity")      # all | no_activity | none
+        has_txns = bool(c.txns["CREDITS"] or c.txns["DEBITS"])
+        if mode == "all" or (mode == "no_activity" and not has_txns):
             self.ctx = c
             rec = self._base() | {"record_type": "balance", "total_credits": str(cr), "total_debits": str(dr),
                                   "credit_count": len(c.txns["CREDITS"]), "debit_count": len(c.txns["DEBITS"])}

@@ -21,7 +21,10 @@ def test_all_transactions_and_checks_pass():
     recs, warns = _parse()
     tx = [r for r in recs if r["record_type"] == "transaction"]
     bal = [r for r in recs if r["record_type"] == "balance"]
-    assert len(tx) == 34 and len(bal) == 69            # 23 business days x 3 accounts
+    active = {(r["posting_date"], r["account_number"]) for r in tx}
+    assert len(tx) == 34
+    assert len(bal) == 69 - len(active)                 # 23 days x 3 accounts, minus days with activity
+    assert not active & {(r["posting_date"], r["account_number"]) for r in bal}   # no account-day twice
     assert not [w for w in warns if w.startswith(("VALIDATION", "unparsed"))], warns
 
 
@@ -35,8 +38,8 @@ def test_page_split_and_right_column_amounts():
 
 
 def test_negative_balance():
-    bal = [r for r in _parse()[0] if r["record_type"] == "balance"
-           and r["account_number"] == "23567891234" and r["posting_date"] == "2026-07-13"][0]
+    bal = [r for r in _parse()[0]
+           if r["account_number"] == "23567891234" and r["posting_date"] == "2026-07-13"][0]
     assert bal["closing_ledger"] == "-85.00" and bal["closing_ledger_dbcr"] == "DR"
 
 

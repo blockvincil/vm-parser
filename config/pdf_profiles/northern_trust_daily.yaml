@@ -42,10 +42,17 @@ balance_fields:              # BAI code -> field name
   "045": closing_available
 
 output:
-  emit: [transaction, balance]   # transaction rows and/or one balance row per account per day
+  emit: [transaction]            # add "balance" only via balance_records below
+  # One row per account-day unless it had activity:
+  #   no_activity -> account-days WITH transactions are represented by their transaction rows
+  #                  (each already carries opening/closing balance); a balance row is written
+  #                  only for account-days with no transactions, so nothing appears twice
+  #   all         -> also write a balance row for every account-day (duplicates balances by design)
+  #   none        -> transaction rows only
+  balance_records: no_activity
   debit_value: D
   credit_value: C
-  include_raw: true              # adds _raw: every parsed field incl. tags, page, value date
+  include_raw: false              # adds _raw: every parsed field incl. tags, page, value date
   field_map:                     # target recon column : parsed field
     itemdate: posting_date
     subaccount: account_number

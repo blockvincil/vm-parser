@@ -1,0 +1,69 @@
+# Northern Trust Treasury Passport - "Daily Statement - Detail" (BAI-style, position-based layout).
+# All x/y values are FRACTIONS of page width/height, so the same profile works for
+# pdfplumber (points) and Textract (normalised boxes).
+name: northern_trust_daily
+detect: "Northern Trust Treasury Passport"
+
+geometry:
+  row_tolerance: 0.0035      # words within this vertical distance form one visual row (~2.8pt)
+  code_max_x0: 0.075         # 3-digit BAI type code column (x0 ~24pt of 612)
+  amount_min_x0: 0.78        # right-hand amount column (x0 >= ~480pt)
+
+skip_rows:
+  - "^Northern Trust Treasury Passport"
+  - "^Daily Statement"
+  - "^Information Reported On"
+  - "^Page \\d+ of \\d+$"
+
+doc_fields:                  # captured once from the page header
+  reported_on: "Information Reported On:\\s*(?P<v>.+?)\\s+As Of"
+  statement_period: "As Of:\\s*(?P<v>.+)$"
+
+rules:
+  date: "^(?P<date>(January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4})$"
+  date_format: "%B %d, %Y"
+  # name can sit before or after ACCOUNT:, currency follows the account number
+  account: "^BANK:\\s*(?P<bank>\\S+)\\s*(?P<name1>.*?)\\s*ACCOUNT:\\s*(?P<account>\\d+)\\s*(?:(?P<currency>[A-Z]{3})(?=\\s|$))?\\s*(?P<name2>.*)$"
+  balance: "^(?P<code>0[1-9]\\d)\\s+(?P<label>(OPENING|CLOSING) (LEDGER|AVAILABLE) BALANCE)\\s*(?P<amount>\\(?-?[\\d,]+\\.\\d{2}\\)?)?\\s*$"
+  summary: "^(?P<code>\\d{3})\\s+TOTAL (?P<kind>CREDITS|DEBITS)\\s+(?P<amount>[\\d,]+\\.\\d{2})"
+  section: "^ACCOUNT (?P<kind>CREDITS|DEBITS)$"
+  totals_start: "^TOTALS FOR ACCOUNT:"
+  totals_count: "(?P<kind>CREDIT|DEBIT) COUNT:\\s*(?P<count>\\d+)"
+  txn_code: "^\\d{3}$"
+  value_date: "Value Date Of (?P<d>\\d{2}-\\d{2}-\\d{4})"
+  value_date_format: "%m-%d-%Y"
+  reference: "(?:FUND TRF#|\\bTRN(?=\\d)|Our TRN Number -\\s*)(?P<ref>[A-Z0-9]{8,})"
+  tags: ["ORG", "OBI", "IBK", "BBK", "BNF", "SRF", "OBK", "BBI", "ID"]
+
+balance_fields:              # BAI code -> field name
+  "010": opening_ledger
+  "015": closing_ledger
+  "040": opening_available
+  "045": closing_available
+
+output:
+  emit: [transaction, balance]   # transaction rows and/or one balance row per account per day
+  debit_value: D
+  credit_value: C
+  include_raw: true              # adds _raw: every parsed field incl. tags, page, value date
+  field_map:                     # target recon column : parsed field
+    itemdate: posting_date
+    subaccount: account_number
+    currency: currency
+    amount: amount
+    dbcr_4: dbcr
+    description: description
+    desc_1: reference
+    functionofmessage: type_code
+    openingbalance: opening_ledger
+    openingbalancedate: posting_date
+    openingbalancedbcr_9: opening_ledger_dbcr
+    closingbalance: closing_ledger
+    closingbalancedate: posting_date
+    closingbalancedbcr_3: closing_ledger_dbcr
+
+validation:                    # results go to job warnings; fail_on_error aborts the file
+  control_totals: true         # sum/count of txns == "TOTALS FOR ACCOUNT" and "400/100 TOTAL" lines
+  balance_roll: true           # opening ledger + credits - debits == closing ledger
+  bai_type_direction: true     # type 1xx-3xx must be credit, 4xx-6xx debit
+  fail_on_error: false

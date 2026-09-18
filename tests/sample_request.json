@@ -1,0 +1,321 @@
+{
+  "path": "/blocdata/matchingservice/workflow/INBOUND/QA/Book12.xlsx",
+  "sourceName": "QA_Cash",
+  "fileName": "*.xlsx",
+  "columnDetails": [
+    {
+      "columnName": "txnhash",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "blockhash",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "block_seq",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "batch_id",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "sourcetype",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "process_date",
+      "columnType": "date"
+    },
+    {
+      "columnName": "asset_id",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "custom_field_1",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "custom_field_2",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "custom_field_3",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "custom_field_4",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "functionofmessage",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "last_modified_by",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "created_date",
+      "columnType": "timestamp"
+    },
+    {
+      "columnName": "last_modified_date",
+      "columnType": "timestamp"
+    },
+    {
+      "columnName": "last_auth_date",
+      "columnType": "timestamp"
+    },
+    {
+      "columnName": "last_auth_by",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "auth",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "bloc_recon_file_name",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "bloc_recon_file_sequence_id",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "subaccount",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "currency",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "amount",
+      "columnType": "numeric"
+    },
+    {
+      "columnName": "dbcr_4",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "openingbalancedbcr_9",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "closingbalance",
+      "columnType": "numeric"
+    },
+    {
+      "columnName": "closingbalancedbcr_3",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "itemdate",
+      "columnType": "date"
+    },
+    {
+      "columnName": "openingbalancedate",
+      "columnType": "date"
+    },
+    {
+      "columnName": "closingbalancedate",
+      "columnType": "date"
+    },
+    {
+      "columnName": "description",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "sedol",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "cusip",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "file_seq_id",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "openingbalance",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "currency_2",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "desc_1",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "isin",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "ticker",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "tic",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "compare_status",
+      "columnType": "varchar"
+    },
+    {
+      "columnName": "compare_hash",
+      "columnType": "varchar"
+    }
+  ],
+  "eventId": "EV20260123000001001",
+  "importType": "File_Import",
+  "reconId": "REC20260123000993997",
+  "source": "QA_Cash",
+  "eventSeqId": 16184,
+  "reconType": "cash_recon",
+  "ruleId": "WF20260602000108001",
+  "fileImportDetails": {
+    "fileName": "*.xlsx",
+    "format": "JSON",
+    "subPath": "/blocdata/matchingservice/workflow/INBOUND/QA",
+    "delimiter": ",",
+    "path": "/blocdata/matchingservice/workflow/INBOUND",
+    "headersRow": 1,
+    "isReadByColumnNumber": false,
+    "isReadByPosition": false,
+    "columnPositionDetails": [
+      {
+        "source_column": "amount",
+        "source_display_column": "Amount",
+        "field_type": "Numeric",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "closingbalance",
+        "source_display_column": "Closing Balance",
+        "field_type": "Numeric",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "closingbalancedate",
+        "source_display_column": "Closing Balance Date",
+        "field_type": "Date",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "closingbalancedbcr_7",
+        "source_display_column": "Closing Balance DB/CR",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "currency",
+        "source_display_column": "Currency",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "cusip",
+        "source_display_column": "CUSIP",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "dbcr_4",
+        "source_display_column": "DB/CR",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "description",
+        "source_display_column": "Description",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "isin",
+        "source_display_column": "ISIN",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "itemdate",
+        "source_display_column": "Item Date",
+        "field_type": "Date",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "openingbalance",
+        "source_display_column": "Opening Balance",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "openingbalancedate",
+        "source_display_column": "Opening Balance Date",
+        "field_type": "Date",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "openingbalancedbcr_5",
+        "source_display_column": "Opening Balance DB/CR",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "sedol",
+        "source_display_column": "SEDOL",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "subaccount",
+        "source_display_column": "Sub Account",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      },
+      {
+        "source_column": "ticker",
+        "source_display_column": "TICKER",
+        "field_type": "String",
+        "start_position": null,
+        "end_position": null
+      }
+    ],
+    "isExcludeColumns": false,
+    "includeExcludeCols": []
+  },
+  "delimiter": ",",
+  "format": "Excel",
+  "fileSeqId": "FILE20260918000513954_0",
+  "customDateFormat": "",
+  "headersRow": 1,
+  "fetchByName": true,
+  "sheetIdentifiers": [
+    ""
+  ],
+  "ocr_keywords": {
+    "custom1": "'test'"
+  },
+  "enrichFlow": true
+}

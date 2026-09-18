@@ -1,0 +1,75 @@
+# All values can be overridden by env vars: DP__SECTION__KEY (e.g. DP__BATCH__SIZE=500)
+batch:
+  size: 1000                 # records per JSON row in parsed_batches
+
+postgres:
+  dsn: postgresql://docparser:docparser@postgres:5432/docparser
+  pool_min: 2
+  pool_max: 10
+
+kafka:
+  bootstrap_servers: kafka:9092
+  topic: bd-ocr-flow
+  group_id: docparser-workers
+  result_topic: bd-ocr-flow-result   # "" disables completion events
+  dlq_topic: bd-ocr-flow-dlq
+  max_poll_interval_ms: 1800000      # large files can take a while
+
+storage:
+  allowed_roots: ["/blocdata"]       # path-traversal guard
+  wildcard_pick: latest              # latest | all   (fileName like *.xlsx)
+
+typing:
+  date_formats: ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%b-%Y", "%Y%m%d"]
+  dayfirst: true
+  on_coerce_error: keep_raw          # keep_raw | null | fail
+
+pdf:
+  engine: native                     # native | textract   (where words come from)
+  layout: auto                       # auto | statement | table
+                                     #   statement: profile-driven parser for bank statements
+                                     #   table:     ruled/aligned grid tables
+                                     #   auto:      use a statement profile whose `detect` matches page 1, else table
+  profile: ""                        # force a profile name, e.g. northern_trust_daily
+  profiles_dir: config/pdf_profiles  # one YAML per statement layout
+  native:
+    table_strategy: auto             # lines | text | auto (lines, fallback to text)
+    snap_tolerance: 3
+    join_tolerance: 3
+    intersection_tolerance: 3
+    text_x_tolerance: 2
+    min_table_rows: 2
+    min_table_cols: 2
+    stitch_across_pages: true        # merge tables continuing on next page
+    drop_repeated_headers: true
+    merge_wrapped_rows: true         # row with empty key column -> appended to previous row
+    key_column_index: 0
+    skip_row_patterns: ["^\\s*(page \\d+|total|sub\\s*total|continued)\\b"]
+    pages: all                       # all | "1-3,5"
+  textract:
+    region: us-east-1
+    mode: auto                       # auto | sync | async (async needed for multi-page)
+    s3_bucket: ""
+    s3_prefix: docparser/
+    features: ["TABLES", "FORMS"]
+    poll_seconds: 3
+    timeout_seconds: 900
+  numeric:
+    parentheses_negative: true       # (1,234.00) -> -1234.00
+    trailing_minus: true             # 1,234.00- -> -1234.00
+    crdr_suffix: true                # "1,234.00 CR" -> 1234.00 (dbcr captured separately)
+  key_values:                        # document-level fields, added to every record under _doc
+    enabled: true
+    patterns:
+      opening_balance: "opening\\s+balance[:\\s]+([\\-\\d,().]+)"
+      closing_balance: "closing\\s+balance[:\\s]+([\\-\\d,().]+)"
+      statement_date: "statement\\s+date[:\\s]+([\\w/\\-. ]+)"
+
+superset:
+  base_url: http://superset:8088
+  username: admin
+  password: admin
+  provider: db
+  verify_tls: true
+  timeout_seconds: 120
+  row_limit: 1000000

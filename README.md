@@ -24,6 +24,32 @@ curl localhost:8000/jobs/FILE20260918000513954_0
 curl localhost:8000/jobs/FILE20260918000513954_0/batches/1
 ```
 
+## Local testing with fixtures (no Postgres / Kafka)
+Put any file in `tests/fixtures/`; output lands in `tests/fixtures/outputs/<name_ext>/` (e.g. `Book12_xlsx/`):
+`batch_0001.json`, `batch_0002.json`, ... (same shape as a `parsed_batches` row) plus `_job.json`
+(status, counts, warnings, validation summary). The folder is wiped on each run.
+
+CLI (quickest):
+```powershell
+python -m app.devtools                                   # list fixtures
+python -m app.devtools northern_trust_sample.pdf
+python -m app.devtools sample_cash.xlsx --batch-size 10
+python -m app.devtools scan.pdf --set parserOptions.pdf.engine=textract
+```
+HTTP:
+```powershell
+$env:DP_DEV_ENDPOINTS="true"; uvicorn app.api:app --reload
+curl http://localhost:8000/dev/fixtures
+curl -X POST http://localhost:8000/dev/fixtures/northern_trust_sample.pdf/parse `
+     -H "Content-Type: application/json" -d '{"batchSize": 25}'
+```
+Or open http://localhost:8000/docs and use the Swagger UI.
+
+Requests start from `tests/sample_request.json` (the real Kafka message), so column mapping, typing and
+enrichment are exercised exactly as in production. The body / `--set` overrides any field.
+Dev endpoints return 404 unless `DP_DEV_ENDPOINTS=true`, and the API skips Postgres init in dev mode
+(`DP_SKIP_DB=false` to keep it).
+
 ## Key behaviours
 | Concern | How |
 |---|---|

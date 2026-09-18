@@ -20,8 +20,13 @@ app = FastAPI(title="DocParser", version="1.0.0")
 _producer: Producer | None = None
 
 
+DEV_MODE = os.getenv("DP_DEV_ENDPOINTS", "false").lower() in ("1", "true", "yes")
+
+
 @app.on_event("startup")
 def _startup():
+    if DEV_MODE and os.getenv("DP_SKIP_DB", "true").lower() in ("1", "true", "yes"):
+        return                      # dev: fixture endpoints work without Postgres
     db.init_schema()
 
 
@@ -83,3 +88,33 @@ def batch(file_seq_id: str, batch_no: int):
     if b is None:
         raise HTTPException(404)
     return b
+
+
+# ---------------------------------------------------------------- dev / testing
+# Enabled only when DP_DEV_ENDPOINTS=true. No Postgres or Kafka needed.
+from .devtools import run_fixture, list_fixture_files, FixtureError
+
+
+def _dev_guard():
+    if not DEV_MODE:
+        raise HTTPException(404)
+
+
+@app.get("/dev/fixtures")
+def list_fixtures():
+    _dev_guard()
+    return list_fixture_files()
+
+
+@app.post("/dev/fixtures/{filename}/parse")
+async def parse_fixture(filename: str, overrides: dict[str, Any] | None = None):
+    """Parses tests/fixtures/<filename>, writes tests/fixtures/outputs/<stem>/batch_NNNN.json + _job.json.
+    Optional body = request overrides, e.g. {"batchSize": 10} or
+    {"parserOptions": {"pdf": {"engine": "textract"}}}."""
+    _dev_guard()
+    try:
+        return await run_in_threadpool(run_fixture, filename, overrides)
+    except FixtureError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(422, repr(e))

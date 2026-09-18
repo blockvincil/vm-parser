@@ -98,7 +98,9 @@ def _enrich(rec: dict, req: ParseRequest, file_path: str | None, batch_id: str, 
             rec[f"custom_field_{m.group(1)}"] = v
 
 
-def process(req_dict: dict[str, Any]) -> dict[str, Any]:
+def process(req_dict: dict[str, Any], sink=None, allowed_roots: list[str] | None = None) -> dict[str, Any]:
+    from .sinks import DbSink
+    sink = sink or DbSink()
     s = get_settings()
     req = ParseRequest.model_validate(req_dict)
     file_seq_id = req.fileSeqId or f"AUTO-{uuid.uuid4().hex[:16]}"
@@ -108,11 +110,12 @@ def process(req_dict: dict[str, Any]) -> dict[str, Any]:
     paths: list[str | None] = [None]
     fmt = "superset" if req.superset else None
     if fmt is None:
-        paths = resolve_paths(req, s.storage.wildcard_pick, s.storage.allowed_roots)
+        paths = resolve_paths(req, s.storage.wildcard_pick,
+                              allowed_roots if allowed_roots is not None else s.storage.allowed_roots)
         fmt = req.resolved_format(paths[0])
 
     parser = build_parser(fmt, req, s, paths[0])
-    job_id, go = db.claim_job(file_seq_id, req_dict, fmt, ",".join(p or "" for p in paths),
+    job_id, go = sink.claim(file_seq_id, req_dict, fmt, ",".join(p or "" for p in paths),
                               parser.engine, batch_size)
     if not go:
         log.info("job.skip_completed", file_seq_id=file_seq_id)
@@ -128,7 +131,7 @@ def process(req_dict: dict[str, Any]) -> dict[str, Any]:
         if not buf:
             return
         batch_no += 1
-        db.insert_batch(job_id, file_seq_id, batch_no, buf_first, buf,
+        sink.batch(job_id, file_seq_id, batch_no, buf_first, buf,
                         {**meta, "batch_no": batch_no, "batch_size": batch_size, "format": fmt,
                          "engine": parser.engine, "reconId": req.reconId, "eventId": req.eventId})
         buf, buf_first = [], None
@@ -154,10 +157,10 @@ def process(req_dict: dict[str, Any]) -> dict[str, Any]:
                         flush(meta)
         flush(meta)
         warnings = mapper.warnings + parser.warnings
-        db.finish_job(job_id, "COMPLETED", total, batch_no, warnings)
+        sink.finish(job_id, "COMPLETED", total, batch_no, warnings)
         log.info("job.completed", file_seq_id=file_seq_id, records=total, batches=batch_no)
         return {"fileSeqId": file_seq_id, "status": "COMPLETED", "records": total,
                 "batches": batch_no, "warnings": warnings, "reconId": req.reconId, "eventId": req.eventId}
     except Exception as e:
-        db.finish_job(job_id, "FAILED", total, batch_no, mapper.warnings + parser.warnings, repr(e))
+        sink.finish(job_id, "FAILED", total, batch_no, mapper.warnings + parser.warnings, repr(e))
         raise

@@ -1,0 +1,4 @@
+tests/fixtures/outputs/
+__pycache__/
+.venv/
+.venv/Lib/site-packages/

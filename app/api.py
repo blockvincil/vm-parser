@@ -20,12 +20,24 @@ app = FastAPI(title="DocParser", version="1.0.0")
 _producer: Producer | None = None
 
 
-DEV_MODE = os.getenv("DP_DEV_ENDPOINTS", "false").lower() in ("1", "true", "yes")
+from .config import load_dotenv
+load_dotenv()                                   # .env must be loaded before reading DP_DEV_ENDPOINTS
+
+
+def _flag(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+DEV_MODE = _flag("DP_DEV_ENDPOINTS")
 
 
 @app.on_event("startup")
 def _startup():
-    if DEV_MODE and os.getenv("DP_SKIP_DB", "true").lower() in ("1", "true", "yes"):
+    import logging
+    logging.getLogger("uvicorn.error").info(
+        "DocParser API: dev endpoints %s", "ENABLED (/dev/...)" if DEV_MODE
+        else "disabled (set DP_DEV_ENDPOINTS=true in .env or the shell to enable)")
+    if DEV_MODE and _flag("DP_SKIP_DB", "true"):
         return                      # dev: fixture endpoints work without Postgres
     db.init_schema()
 
@@ -97,7 +109,8 @@ from .devtools import run_fixture, list_fixture_files, FixtureError
 
 def _dev_guard():
     if not DEV_MODE:
-        raise HTTPException(404)
+        raise HTTPException(404, "dev endpoints are disabled: set DP_DEV_ENDPOINTS=true "
+                                 "(in .env or the shell) and restart the API")
 
 
 @app.get("/dev/fixtures")
@@ -106,7 +119,8 @@ def list_fixtures():
     return list_fixture_files()
 
 
-@app.post("/dev/fixtures/{filename}/parse")
+@app.get("/dev/fixtures/{filename}/parse")      # GET = click it in a browser, default options
+@app.post("/dev/fixtures/{filename}/parse")     # POST = optional JSON body with overrides
 async def parse_fixture(filename: str, overrides: dict[str, Any] | None = None):
     """Parses tests/fixtures/<filename>, writes tests/fixtures/outputs/<stem>/batch_NNNN.json + _job.json.
     Optional body = request overrides, e.g. {"batchSize": 10} or

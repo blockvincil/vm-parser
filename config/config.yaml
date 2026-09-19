@@ -35,6 +35,8 @@ kafka:
   result_topic: bd-ocr-flow-result   # "" disables completion events
   dlq_topic: bd-ocr-flow-dlq         # "" disables dead-letter
   max_poll_interval_ms: 1800000
+  idempotence: false                 # true only if the broker grants IdempotentWrite
+  skip_non_parse_messages: true      # other message types on a shared topic are logged and skipped
 
 
 storage:

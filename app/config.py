@@ -62,6 +62,8 @@ class KafkaCfg(BaseModel):
     dlq_topic: str = ""
     max_poll_interval_ms: int = 1_800_000
     auto_offset_reset: str = "earliest"
+    idempotence: bool = False              # needs broker >= 0.11 and IdempotentWrite ACL
+    skip_non_parse_messages: bool = True   # log + skip items without path/fileName/superset (else DLQ)
 
     def client_conf(self) -> dict[str, Any]:
         """Common librdkafka config for consumers and producers."""
@@ -82,7 +84,7 @@ class KafkaCfg(BaseModel):
                                      "max.poll.interval.ms": self.max_poll_interval_ms}
 
     def producer_conf(self) -> dict[str, Any]:
-        return self.client_conf() | {"enable.idempotence": True, "acks": "all"}
+        return self.client_conf() | {"enable.idempotence": self.idempotence, "acks": "all"}
 
 class StorageCfg(BaseModel):
     allowed_roots: list[str] = ["/blocdata"]

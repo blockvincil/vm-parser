@@ -52,7 +52,7 @@ output:
   balance_records: no_activity
   debit_value: D
   credit_value: C
-  include_raw: false              # adds _raw: every parsed field incl. tags, page, value date
+  include_raw: true              # adds _raw: every parsed field incl. tags, page, value date
   field_map:                     # target recon column : parsed field
     itemdate: posting_date
     subaccount: account_number

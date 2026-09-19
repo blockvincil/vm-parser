@@ -13,13 +13,28 @@ def pool() -> ConnectionPool:
     global _pool
     if _pool is None:
         c = get_settings().postgres
-        _pool = ConnectionPool(c.dsn, min_size=c.pool_min, max_size=c.pool_max, open=True)
+        schema = c.schema_
+
+        def configure(conn):                       # every pooled connection uses our schema
+            conn.execute(f'SET search_path TO "{schema}", public')
+            conn.commit()
+
+        _pool = ConnectionPool(c.conninfo(), min_size=c.pool_min, max_size=c.pool_max,
+                               configure=configure, open=True, timeout=c.connect_timeout + 5)
     return _pool
+
+
+def ping() -> str:
+    with pool().connection() as conn:
+        return conn.execute("SELECT version()").fetchone()[0]
 
 
 def init_schema():
     sql = (Path(__file__).parent.parent / "sql" / "init.sql").read_text()
+    schema = get_settings().postgres.schema_
     with pool().connection() as conn:
+        conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        conn.execute(f'SET search_path TO "{schema}", public')
         conn.execute(sql)
 
 

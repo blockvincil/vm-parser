@@ -1,12 +1,36 @@
+# Uses YOUR Postgres and Kafka from .env by default:
+#   docker compose up -d --build
+# Bundled local Postgres + Kafka are optional (profile "local"):
+#   docker compose --profile local up -d --build   (then point .env at postgres / kafka:9092)
+x-app: &app
+  build: .
+  env_file: .env
+  volumes: ["${BLOCDATA_DIR:-/blocdata}:/blocdata"]
+  # Brokers/DB on the host machine? use host.docker.internal in .env (extra_hosts makes it work on Linux)
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  restart: unless-stopped
+
 services:
+  worker:
+    <<: *app
+    command: python -m app.worker
+    deploy: {replicas: 3}          # <= topic partitions
+
+  api:
+    <<: *app
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 2
+    ports: ["8000:8000"]
+
+  # ---------- optional local infrastructure ----------
   postgres:
+    profiles: [local]
     image: postgres:16
     environment: {POSTGRES_USER: docparser, POSTGRES_PASSWORD: docparser, POSTGRES_DB: docparser}
-    volumes: [pgdata:/var/lib/postgresql/data, ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro]
+    volumes: [pgdata:/var/lib/postgresql/data]
     ports: ["5432:5432"]
-    healthcheck: {test: ["CMD-SHELL", "pg_isready -U docparser"], interval: 5s, retries: 10}
 
   kafka:
+    profiles: [local]
     image: bitnami/kafka:3.7
     environment:
       KAFKA_CFG_NODE_ID: 1
@@ -18,24 +42,5 @@ services:
       KAFKA_CFG_NUM_PARTITIONS: 6
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports: ["9092:9092"]
-
-  worker:
-    build: .
-    command: python -m app.worker
-    depends_on: {postgres: {condition: service_healthy}, kafka: {condition: service_started}}
-    environment:
-      DP__BATCH__SIZE: "1000"
-      # DP__PDF__ENGINE: textract
-      # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / DP__PDF__TEXTRACT__S3_BUCKET
-    volumes: ["/blocdata:/blocdata:ro"]
-    deploy: {replicas: 3}          # <= topic partitions
-
-  api:
-    build: .
-    command: uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 2
-    depends_on: {postgres: {condition: service_healthy}}
-    environment: {WEBHOOK_TOKEN: change-me}
-    volumes: ["/blocdata:/blocdata"]
-    ports: ["8000:8000"]
 
 volumes: {pgdata: {}}

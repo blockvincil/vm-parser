@@ -23,16 +23,13 @@ def _stop(*_):
 def main():
     s = get_settings().kafka
     db.init_schema()
-    consumer = Consumer({
-        "bootstrap.servers": s.bootstrap_servers, "group.id": s.group_id,
-        "enable.auto.commit": False, "auto.offset.reset": "earliest",
-        "max.poll.interval.ms": s.max_poll_interval_ms,
-    })
-    producer = Producer({"bootstrap.servers": s.bootstrap_servers})
+    consumer = Consumer(s.consumer_conf())
+    producer = Producer(s.producer_conf())
     consumer.subscribe([s.topic])
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    log.info("worker.started", topic=s.topic, group=s.group_id)
+    log.info("worker.started", topic=s.topic, group=s.group_id, brokers=s.bootstrap_servers,
+             security=s.security_protocol, postgres=get_settings().postgres.safe())
 
     while _running:
         msg = consumer.poll(1.0)

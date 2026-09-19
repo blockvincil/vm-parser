@@ -13,16 +13,28 @@ HTTP upload / webhook ─► api ───┼─► resolve ─► parser ─►
 Results ─► bd-ocr-flow-result      Failures ─► bd-ocr-flow-dlq
 ```
 
-## Run
-```bash
-docker compose up -d --build                 # postgres, kafka, 3 workers, api
-docker compose run --rm api pytest -q        # tests (DB faked)
-# send the sample message
-docker compose exec kafka kafka-console-producer.sh --bootstrap-server kafka:9092 --topic bd-ocr-flow \
-  < <(jq -c . tests/sample_request.json)
-curl localhost:8000/jobs/FILE20260918000513954_0
-curl localhost:8000/jobs/FILE20260918000513954_0/batches/1
+## Run against your own Postgres and Kafka
+```powershell
+copy .env.example .env          # fill in host, user, password, brokers (and SASL/SSL if used)
+python -m app.check --init-db   # verifies both connections, creates tables in your schema, lists topics
+python -m app.worker            # consume bd-ocr-flow
+uvicorn app.api:app --port 8000 # HTTP API
 ```
+Docker: `docker compose up -d --build` reads the same `.env`. Postgres/Kafka running on your own machine →
+use `host.docker.internal` as the host in `.env`. Bundled throwaway infra is still available with
+`docker compose --profile local up -d`.
+
+Settings resolve in this order (later wins): `config/config.yaml` → `.env` → real environment variables.
+Any key can be set as `DP__<SECTION>__<KEY>`, e.g. `DP__POSTGRES__SCHEMA=recon`.
+
+| | Supported |
+|---|---|
+| Postgres | full `dsn` **or** host/port/database/user/password; `sslmode` + `sslrootcert`; own `schema` (created if missing, tables live there); pool size |
+| Kafka | multiple brokers; `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL`; PLAIN / SCRAM-SHA-256/512; CA + mTLS client certs; any other librdkafka property via `kafka.extra` |
+
+The DB user needs `CREATE` on the schema for the first `--init-db`, or have a DBA run `sql/init.sql` once.
+Topics must exist unless your cluster auto-creates them; `app.check` warns if they don't.
+Passwords are never logged.
 
 ## Local testing with fixtures (no Postgres / Kafka)
 Put any file in `tests/fixtures/`; output lands in `tests/fixtures/outputs/<name_ext>/` (e.g. `Book12_xlsx/`):

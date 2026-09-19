@@ -68,7 +68,7 @@ async def upload(file: UploadFile = File(...), request: str = Form("{}")):
 def enqueue(body: dict[str, Any]):
     global _producer
     s = get_settings().kafka
-    _producer = _producer or Producer({"bootstrap.servers": s.bootstrap_servers})
+    _producer = _producer or Producer(s.producer_conf())
     _producer.produce(s.topic, json.dumps(body).encode(), key=(body.get("fileSeqId") or "").encode())
     _producer.flush(5)
     return {"queued": True, "fileSeqId": body.get("fileSeqId")}

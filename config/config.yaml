@@ -3,17 +3,39 @@ batch:
   size: 1000                 # records per JSON row in parsed_batches
 
 postgres:
-  dsn: postgresql://docparser:docparser@postgres:5432/docparser
+  # Set either `dsn` OR the individual fields. Prefer .env / env vars for secrets:
+  #   DP__POSTGRES__HOST, DP__POSTGRES__PASSWORD, ...  (see .env.example)
+  dsn: ""                            # e.g. postgresql://user:pass@db.company.net:5432/recon?sslmode=require
+  host: localhost
+  port: 5432
+  database: docparser
+  user: docparser
+  password: ""
+  sslmode: prefer                    # disable | prefer | require | verify-ca | verify-full
+  sslrootcert: ""                    # CA file for verify-ca / verify-full
+  schema: public                     # parse_jobs / parsed_batches are created in this schema
   pool_min: 2
   pool_max: 10
 
+
 kafka:
-  bootstrap_servers: kafka:9092
+  bootstrap_servers: localhost:9092  # comma-separated
+  security_protocol: PLAINTEXT       # PLAINTEXT | SSL | SASL_PLAINTEXT | SASL_SSL
+  sasl_mechanism: ""                 # PLAIN | SCRAM-SHA-256 | SCRAM-SHA-512
+  sasl_username: ""
+  sasl_password: ""
+  ssl_ca_location: ""                # PEM CA bundle for SSL / SASL_SSL
+  ssl_certificate_location: ""       # mTLS only
+  ssl_key_location: ""
+  ssl_key_password: ""
+  extra: {}                          # any other librdkafka property, e.g. {"session.timeout.ms": 45000}
   topic: bd-ocr-flow
   group_id: docparser-workers
+  auto_offset_reset: earliest        # earliest | latest (only for a brand-new group_id)
   result_topic: bd-ocr-flow-result   # "" disables completion events
-  dlq_topic: bd-ocr-flow-dlq
-  max_poll_interval_ms: 1800000      # large files can take a while
+  dlq_topic: bd-ocr-flow-dlq         # "" disables dead-letter
+  max_poll_interval_ms: 1800000
+
 
 storage:
   allowed_roots: ["/blocdata"]       # path-traversal guard

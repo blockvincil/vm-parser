@@ -14,10 +14,16 @@ from typing import Any
 from .pipeline import process
 from .sinks import FileSink
 
+import os
+from .config import load_dotenv
+
+load_dotenv()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
-OUTPUTS = FIXTURES / "outputs"
+# Override with DP_FIXTURES_DIR (absolute, or relative to the project root) if your files live elsewhere
+FIXTURES = (PROJECT_ROOT / os.getenv("DP_FIXTURES_DIR", "tests/fixtures")).resolve()
+OUTPUTS = (PROJECT_ROOT / os.getenv("DP_FIXTURES_OUTPUT_DIR", str(FIXTURES / "outputs"))).resolve()
 SAMPLE_REQUEST = PROJECT_ROOT / "tests" / "sample_request.json"
+PARSEABLE = {".pdf", ".csv", ".txt", ".tsv", ".xlsx", ".xlsm", ".xls"}
 
 
 class FixtureError(Exception):
@@ -25,13 +31,24 @@ class FixtureError(Exception):
 
 
 def list_fixture_files() -> list[str]:
-    return sorted(p.name for p in FIXTURES.iterdir() if p.is_file()) if FIXTURES.exists() else []
+    if not FIXTURES.is_dir():
+        return []
+    return sorted(p.name for p in FIXTURES.iterdir() if p.is_file() and p.suffix.lower() in PARSEABLE)
+
+
+def fixtures_info() -> dict[str, Any]:
+    """Where we look, so an empty list is never a mystery."""
+    return {"fixtures_dir": str(FIXTURES), "exists": FIXTURES.is_dir(),
+            "outputs_dir": str(OUTPUTS), "files": list_fixture_files(),
+            "hint": None if list_fixture_files() else
+                    f"copy files into {FIXTURES} or set DP_FIXTURES_DIR in .env"}
 
 
 def run_fixture(filename: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     src = (FIXTURES / filename).resolve()
     if src.parent != FIXTURES.resolve() or not src.is_file():     # blocks ../ escapes
-        raise FixtureError(f"fixture not found: {filename} (available: {list_fixture_files()})")
+        raise FixtureError(f"fixture not found: {filename} in {FIXTURES} "
+                           f"(folder exists: {FIXTURES.is_dir()}, available: {list_fixture_files()})")
 
     # start from the real Kafka message so column mapping/typing is exercised too
     req: dict[str, Any] = json.loads(SAMPLE_REQUEST.read_text()) if SAMPLE_REQUEST.exists() else {}
@@ -71,7 +88,9 @@ def main():
                     help="request override, dotted keys allowed")
     a = ap.parse_args()
     if not a.filename:
-        print("\n".join(list_fixture_files()) or f"no files in {FIXTURES}")
+        info = fixtures_info()
+        print(f"fixtures dir: {info['fixtures_dir']}  (exists: {info['exists']})")
+        print("\n".join(info["files"]) or f"  no parseable files - {info['hint']}")
         return
     ov: dict[str, Any] = {}
     if a.batch_size:

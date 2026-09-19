@@ -104,7 +104,7 @@ def batch(file_seq_id: str, batch_no: int):
 
 # ---------------------------------------------------------------- dev / testing
 # Enabled only when DP_DEV_ENDPOINTS=true. No Postgres or Kafka needed.
-from .devtools import run_fixture, list_fixture_files, FixtureError
+from .devtools import run_fixture, fixtures_info, FixtureError
 
 
 def _dev_guard():
@@ -116,7 +116,7 @@ def _dev_guard():
 @app.get("/dev/fixtures")
 def list_fixtures():
     _dev_guard()
-    return list_fixture_files()
+    return fixtures_info()
 
 
 @app.get("/dev/fixtures/{filename}/parse")      # GET = click it in a browser, default options

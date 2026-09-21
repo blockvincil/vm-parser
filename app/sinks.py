@@ -178,10 +178,7 @@ class DbJsonSink(DbSink):
             # Then final parsed fields
             for key, value in record.items():
 
-                if key in (
-                    "_row",
-                    "_raw"
-                ):
+                if key in (  "_row","_raw","batch_id","sourcetype","bloc_recon_file_name"):
                     continue
 
                 clean_record[key] = value

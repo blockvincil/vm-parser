@@ -19,50 +19,13 @@ from . import db
 class DbSink:
 
     def claim(self, file_seq_id, req, fmt, path, engine, batch_size):
-        return db.claim_job(
-            file_seq_id,
-            req,
-            fmt,
-            path,
-            engine,
-            batch_size
-        )
+        return db.claim_job(file_seq_id, req,fmt,path,engine, batch_size )
 
-    def batch(
-        self,
-        job_id,
-        file_seq_id,
-        batch_no,
-        first_row,
-        records,
-        meta
-    ):
-        db.insert_batch(
-            job_id,
-            file_seq_id,
-            batch_no,
-            first_row,
-            records,
-            meta
-        )
+    def batch( self, job_id,file_seq_id,batch_no,first_row, records,meta):
+        db.insert_batch(job_id,file_seq_id, batch_no, first_row, records, meta)
 
-    def finish(
-        self,
-        job_id,
-        status,
-        total=0,
-        batches=0,
-        warnings=None,
-        error=None
-    ):
-        db.finish_job(
-            job_id,
-            status,
-            total,
-            batches,
-            warnings,
-            error
-        )
+    def finish(self,job_id,status,total=0,batches=0,warnings=None, error=None):
+        db.finish_job( job_id, status, total, batches,warnings,error )
 
 
 class DbJsonSink(DbSink):
@@ -92,45 +55,22 @@ class DbJsonSink(DbSink):
         self._first_record = True
 
 
-    def claim(
-        self,
-        file_seq_id,
-        req,
-        fmt,
-        path,
-        engine,
-        batch_size
-    ):
+    def claim(self,file_seq_id, req, fmt, path, engine, batch_size ):
 
         # Existing DB behavior
-        job_id, should_process = super().claim(
-            file_seq_id,
-            req,
-            fmt,
-            path,
-            engine,
-            batch_size
-        )
+        job_id, should_process = super().claim( file_seq_id,req,fmt,path,engine,batch_size )
 
         if not should_process:
             return job_id, False
 
         # Make sure directory exists
-        self.json_path.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        self.json_path.parent.mkdir( parents=True,exist_ok=True)
 
         # Remove previous incomplete temp output
-        self.tmp_path.unlink(
-            missing_ok=True
-        )
+        self.tmp_path.unlink( missing_ok=True)
 
         # Start writing JSON
-        self._fh = self.tmp_path.open(
-            "w",
-            encoding="utf-8"
-        )
+        self._fh = self.tmp_path.open( "w",  encoding="utf-8" )
 
         self._fh.write("[\n")
 
@@ -139,27 +79,12 @@ class DbJsonSink(DbSink):
         return job_id, True
 
 
-    def batch(
-        self,
-        job_id,
-        file_seq_id,
-        batch_no,
-        first_row,
-        records,
-        meta
-    ):
+    def batch(self, job_id,file_seq_id,batch_no, first_row,records, meta):
 
         # ----------------------------------------------
         # Existing Postgres storage
         # ----------------------------------------------
-        super().batch(
-            job_id,
-            file_seq_id,
-            batch_no,
-            first_row,
-            records,
-            meta
-        )
+        super().batch(job_id,file_seq_id,batch_no,first_row,records,meta)
 
         # ----------------------------------------------
         # JSON file
@@ -186,40 +111,19 @@ class DbJsonSink(DbSink):
             if not self._first_record:
                 self._fh.write(",\n")
 
-            json.dump(
-                clean_record,
-                self._fh,
-                indent=2,
-                ensure_ascii=False,
-                default=str
-            )
+            json.dump(clean_record,self._fh,indent=2, ensure_ascii=False, default=str)
 
             self._first_record = False
 
 
-    def finish(
-        self,
-        job_id,
-        status,
-        total=0,
-        batches=0,
-        warnings=None,
-        error=None
-    ):
+    def finish( self,job_id, status,total=0,batches=0,warnings=None,error=None ):
 
         try:
 
             # ------------------------------------------
             # Existing DB completion
             # ------------------------------------------
-            super().finish(
-                job_id,
-                status,
-                total,
-                batches,
-                warnings,
-                error
-            )
+            super().finish(job_id,status,total,batches,warnings,error)
 
             # ------------------------------------------
             # Close JSON
@@ -236,16 +140,11 @@ class DbJsonSink(DbSink):
             if status == "COMPLETED":
 
                 # Replace final JSON only after full success
-                os.replace(
-                    self.tmp_path,
-                    self.json_path
-                )
+                os.replace(self.tmp_path,self.json_path)
 
             else:
 
-                self.tmp_path.unlink(
-                    missing_ok=True
-                )
+                self.tmp_path.unlink(missing_ok=True)
 
         except Exception:
 
@@ -258,17 +157,13 @@ class DbJsonSink(DbSink):
 
                 self._fh = None
 
-            self.tmp_path.unlink(
-                missing_ok=True
-            )
+            self.tmp_path.unlink(missing_ok=True)
 
             raise
 
 
     def get_output_path(self) -> str:
-        return str(
-            self.json_path.resolve()
-        )
+        return str(self.json_path.resolve())
 
 
 class FileSink:
@@ -288,10 +183,7 @@ class FileSink:
         if clean and self.out.exists():
             shutil.rmtree(self.out)
 
-        self.out.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        self.out.mkdir(parents=True,exist_ok=True)
 
         self.job: dict[str, Any] = {}
 
@@ -301,26 +193,10 @@ class FileSink:
     @staticmethod
     def _dump(path: Path, obj):
 
-        path.write_text(
-            json.dumps(
-                obj,
-                indent=2,
-                default=str,
-                ensure_ascii=False
-            ),
-            encoding="utf-8"
-        )
+        path.write_text(json.dumps(obj,indent=2,default=str,ensure_ascii=False),encoding="utf-8")
 
 
-    def claim(
-        self,
-        file_seq_id,
-        req,
-        fmt,
-        path,
-        engine,
-        batch_size
-    ):
+    def claim(self,file_seq_id,req,fmt,path,engine,batch_size):
 
         self.job = {
             "file_seq_id": file_seq_id,
@@ -338,20 +214,11 @@ class FileSink:
         return 0, True
 
 
-    def batch(
-        self,
-        job_id,
-        file_seq_id,
-        batch_no,
-        first_row,
-        records,
-        meta
-    ):
+    def batch(self,job_id,file_seq_id,batch_no,first_row,records,meta):
 
         name = f"batch_{batch_no:04d}.json"
 
-        self._dump(
-            self.out / name,
+        self._dump(self.out / name,
             {
                 "file_seq_id": file_seq_id,
                 "batch_no": batch_no,
@@ -367,29 +234,10 @@ class FileSink:
         self.files.append(name)
 
 
-    def finish(
-        self,
-        job_id,
-        status,
-        total=0,
-        batches=0,
-        warnings=None,
-        error=None
-    ):
+    def finish(self,job_id,status,total=0,batches=0,warnings=None,error=None):
 
-        self.job.update(
-            status=status,
-            total_records=total,
-            total_batches=batches,
-            warnings=warnings or [],
-            error=error,
-            finished_at=datetime.now(
-                timezone.utc
-            ).isoformat(),
-            files=self.files
-        )
+        self.job.update(status=status,total_records=total,total_batches=batches,
+            warnings=warnings or [],error=error,
+            finished_at=datetime.now(timezone.utc).isoformat(),files=self.files )
 
-        self._dump(
-            self.out / "_job.json",
-            self.job
-        )
+        self._dump(self.out / "_job.json",self.job)

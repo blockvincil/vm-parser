@@ -144,14 +144,9 @@ def build_parser(
             req.parserOptions.get("pdf")
         )
 
-        if pdf_cfg.layout in (
-            "auto",
-            "statement"
-        ):
+        if pdf_cfg.layout in ( "auto", "statement" ):
 
-            profiles = load_profiles(
-                pdf_cfg.profiles_dir
-            )
+            profiles = load_profiles( pdf_cfg.profiles_dir  )
 
             if pdf_cfg.profile:
 
@@ -162,61 +157,32 @@ def build_parser(
                         f"have {sorted(profiles)}"
                     )
 
-                prof = profiles[
-                    pdf_cfg.profile
-                ]
+                prof = profiles[ pdf_cfg.profile]
 
             else:
 
-                prof = (
-                    detect_profile(
-                        path,
-                        profiles,
-                        pdf_cfg.engine
-                    )
-                    if path
-                    else None
-                )
+                prof = (detect_profile( path, profiles,pdf_cfg.engine )
+                    if path  else None )
 
             if prof:
-                return PdfStatementParser(
-                    s,
-                    req,
-                    pdf_cfg,
-                    prof
-                )
+                return PdfStatementParser( s,req,pdf_cfg, prof)
 
             if pdf_cfg.layout == "statement":
-                raise ValueError(
-                    "layout=statement but no "
-                    "profile matched this PDF"
-                )
+                raise ValueError( "layout=statement but no profile matched this PDF" )
 
         cls = (
             PdfTextractParser
-            if pdf_cfg.engine == "textract"
-            else PdfNativeParser
+                if pdf_cfg.engine == "textract"
+                else PdfNativeParser
         )
 
-        return cls(
-            s,
-            req,
-            pdf_cfg
-        )
+        return cls( s, req, pdf_cfg   )
 
-    raise ValueError(
-        f"unsupported format {fmt}"
-    )
+    raise ValueError( f"unsupported format {fmt}" )
 
 
-def _enrich(
-    rec: dict,
-    req: ParseRequest,
-    file_path: str | None,
-    batch_id: str,
-    doc: dict,
-    types: dict
-):
+def _enrich( rec: dict,  req: ParseRequest,file_path: str | None,
+             batch_id: str,doc: dict,types: dict):
 
     """
     Fill system columns only when they exist
@@ -240,33 +206,17 @@ def _enrich(
 
     for k, v in fill.items():
 
-        if (
-            k in types
-            and not rec.get(k)
-            and v
-        ):
+        if k in types  and not rec.get(k) and v:
             rec[k] = v
 
     for k, v in doc.items():
 
         # ocr_keywords custom1
         # -> custom_field_1
-        m = re.fullmatch(
-            r"custom(\d+)",
-            k
-        )
+        m = re.fullmatch(r"custom(\d+)",k)
 
-        if (
-            m
-            and f"custom_field_{m.group(1)}"
-            in types
-            and not rec.get(
-                f"custom_field_{m.group(1)}"
-            )
-        ):
-            rec[
-                f"custom_field_{m.group(1)}"
-            ] = v
+        if ( m and f"custom_field_{m.group(1)}" in types and not rec.get(  f"custom_field_{m.group(1)}" )):
+            rec[f"custom_field_{m.group(1)}" ] = v
 
 
 def process(
@@ -275,21 +225,13 @@ def process(
     allowed_roots: list[str] | None = None
 ) -> dict[str, Any]:
 
-    from .sinks import (
-        DbSink,
-        DbJsonSink
-    )
+    from .sinks import ( DbSink,DbJsonSink )
 
     s = get_settings()
 
-    req = ParseRequest.model_validate(
-        req_dict
-    )
+    req = ParseRequest.model_validate( req_dict )
 
-    file_seq_id = (
-        req.fileSeqId
-        or f"AUTO-{uuid.uuid4().hex[:16]}"
-    )
+    file_seq_id = ( req.fileSeqId or f"AUTO-{uuid.uuid4().hex[:16]}"  )
 
     req.fileSeqId = file_seq_id
 
@@ -312,9 +254,7 @@ def process(
 
     if fmt is None:
 
-        paths = resolve_paths(
-            req,
-            s.storage.wildcard_pick,
+        paths = resolve_paths( req,s.storage.wildcard_pick,
             (
                 allowed_roots
                 if allowed_roots is not None
@@ -322,9 +262,7 @@ def process(
             )
         )
 
-        fmt = req.resolved_format(
-            paths[0]
-        )
+        fmt = req.resolved_format(  paths[0]  )
 
     # -------------------------------------------------
     # Sink selection
@@ -346,16 +284,9 @@ def process(
 
         if paths and paths[0]:
 
-            sink = DbJsonSink(
-                paths[0]
-            )
+            sink = DbJsonSink(paths[0])
 
-            log.info(
-                "json.output.configured",
-                file_seq_id=file_seq_id,
-                source_path=paths[0],
-                output_path=sink.get_output_path()
-            )
+            log.info( "json.output.configured",file_seq_id=file_seq_id,source_path=paths[0],output_path=sink.get_output_path())
 
         else:
 
@@ -365,21 +296,13 @@ def process(
     # Parser
     # -------------------------------------------------
 
-    parser = build_parser(
-        fmt,
-        req,
-        s,
-        paths[0]
-    )
+    parser = build_parser( fmt,req, s, paths[0] )
 
     # -------------------------------------------------
     # Claim job
     # -------------------------------------------------
 
-    job_id, go = sink.claim(
-        file_seq_id,
-        req_dict,
-        fmt,
+    job_id, go = sink.claim(file_seq_id,req_dict,fmt,
         ",".join(
             p or ""
             for p in paths
@@ -394,10 +317,7 @@ def process(
 
     if not go:
 
-        log.info(
-            "job.skip_completed",
-            file_seq_id=file_seq_id
-        )
+        log.info ( "job.skip_completed", file_seq_id=file_seq_id )
 
         result = {
             "fileSeqId": file_seq_id,
@@ -405,33 +325,18 @@ def process(
             "skipped": True
         }
 
-        if isinstance(
-            sink,
-            DbJsonSink
-        ):
+        if isinstance(sink,DbJsonSink ):
 
-            output_path = (
-                sink.get_output_path()
-            )
+            output_path = (sink.get_output_path())
 
             # Important:
             # DB may say COMPLETED from an older run
             # where JSON was not generated.
-            if os.path.isfile(
-                output_path
-            ):
-
-                result[
-                    "outputPath"
-                ] = output_path
+            if os.path.isfile(output_path):
+                result["outputPath"] = output_path
 
             else:
-
-                log.warning(
-                    "job.skip_completed.output_missing",
-                    file_seq_id=file_seq_id,
-                    output_path=output_path
-                )
+                log.warning(  "job.skip_completed.output_missing",file_seq_id=file_seq_id,  output_path=output_path  )
 
         return result
 
@@ -441,15 +346,9 @@ def process(
 
     mapper = ColumnMapper(req)
 
-    coercer = Coercer(
-        s.typing,
-        s.pdf.numeric,
-        req.customDateFormat
-    )
+    coercer = Coercer( s.typing,s.pdf.numeric, req.customDateFormat)
 
-    run_batch_id = (
-        uuid.uuid4().hex[:12]
-    )
+    run_batch_id = ( uuid.uuid4().hex[:12])
 
     total = 0
     batch_no = 0
@@ -501,47 +400,29 @@ def process(
 
         for path in paths:
 
-            for table in parser.tables(
-                path
-            ):
+            for table in parser.tables(   path ):
 
-                if table.meta.get(
-                    "premapped"
-                ):
+                if table.meta.get( "premapped" ):
 
-                    cols = list(
-                        table.headers
-                    )
+                    cols = list( table.headers)
 
                 else:
 
-                    cols = (
-                        mapper.map_headers(
-                            table.headers
-                        )
-                    )
+                    cols = ( mapper.map_headers(table.headers) )
 
-                doc = table.meta.get(
-                    "doc",
-                    {}
-                )
+                doc = table.meta.get("doc",{})
 
                 meta = {
                     k: v
                     for k, v
                     in table.meta.items()
-                    if k not in (
-                        "doc",
-                        "premapped"
-                    )
+                    if k not in ("doc","premapped")
                 } | {
                     "file": path,
                     "doc": doc
                 }
 
-                for i, row in enumerate(
-                    table.rows
-                ):
+                for i, row in enumerate( table.rows ):
 
                     rec = {
                         c: coercer.coerce(
@@ -558,56 +439,31 @@ def process(
                     }
 
                     if req.enrichFlow:
-
-                        _enrich(
-                            rec,
-                            req,
-                            path,
-                            run_batch_id,
-                            doc,
-                            mapper.types
-                        )
+                        _enrich( rec,req,path,run_batch_id,doc,mapper.types)
 
                     # Source row number
-                    rec["_row"] = (
-                        table.first_row_no
-                        + i
-                    )
+                    rec["_row"] = ( table.first_row_no + i )
 
                     if buf_first is None:
-                        buf_first = (
-                            rec["_row"]
-                        )
+                        buf_first = (  rec["_row"] )
 
                     buf.append(rec)
 
                     total += 1
 
-                    if (
-                        len(buf)
-                        >= batch_size
-                    ):
+                    if len(buf) >= batch_size:
                         flush(meta)
 
         # Remaining records
         flush(meta)
 
-        warnings = (
-            mapper.warnings
-            + parser.warnings
-        )
+        warnings = (mapper.warnings + parser.warnings )
 
         # -------------------------------------------------
         # Complete DB + JSON
         # -------------------------------------------------
 
-        sink.finish(
-            job_id,
-            "COMPLETED",
-            total,
-            batch_no,
-            warnings
-        )
+        sink.finish(job_id, "COMPLETED",total,batch_no,warnings )
 
         result = {
             "fileSeqId": file_seq_id,
@@ -623,41 +479,21 @@ def process(
         # Physical JSON output
         # -------------------------------------------------
 
-        if isinstance(
-            sink,
-            DbJsonSink
-        ):
+        if isinstance(sink,DbJsonSink):
 
-            output_path = (
-                sink.get_output_path()
-            )
+            output_path = ( sink.get_output_path() )
 
-            if not os.path.isfile(
-                output_path
-            ):
-                raise FileNotFoundError(
-                    "Parser completed but JSON "
+            if not os.path.isfile( output_path):
+                raise FileNotFoundError("Parser completed but JSON "
                     f"output was not created: "
                     f"{output_path}"
                 )
 
-            result[
-                "outputPath"
-            ] = output_path
+            result["outputPath"] = output_path
 
-            log.info(
-                "json.output.created",
-                file_seq_id=file_seq_id,
-                source_path=paths[0],
-                output_path=output_path
-            )
+            log.info("json.output.created",file_seq_id=file_seq_id,source_path=paths[0],output_path=output_path )
 
-        log.info(
-            "job.completed",
-            file_seq_id=file_seq_id,
-            records=total,
-            batches=batch_no
-        )
+        log.info("job.completed",file_seq_id=file_seq_id,records=total, batches=batch_no)
 
         return result
 
@@ -665,25 +501,11 @@ def process(
 
         try:
 
-            sink.finish(
-                job_id,
-                "FAILED",
-                total,
-                batch_no,
-                mapper.warnings
-                + parser.warnings,
-                repr(e)
-            )
+            sink.finish(job_id,"FAILED",total,batch_no, mapper.warnings + parser.warnings, repr(e) )
 
         except Exception as finish_error:
 
-            log.exception(
-                "job.failure.finish_failed",
-                file_seq_id=file_seq_id,
-                original_error=repr(e),
-                finish_error=repr(
-                    finish_error
-                )
-            )
+            log.exception("job.failure.finish_failed",file_seq_id=file_seq_id,original_error=repr(e),
+                finish_error=repr(finish_error))
 
         raise

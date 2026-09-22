@@ -330,7 +330,7 @@ def main():
                     downstream_message["path" ] = output_path
 
                     downstream_message["isPdfProcessorMessage" ] = True
-
+                    downstream_message["pdfFilePath"] = source_path
                     log.info("pdf.output.ready", fileSeqId=item.get( "fileSeqId"),
                         pdf_path=source_path, json_path=output_path )
 

@@ -50,8 +50,8 @@ output:
   #   all         -> also write a balance row for every account-day (duplicates balances by design)
   #   none        -> transaction rows only
   balance_records: no_activity
-  debit_value: D
-  credit_value: C
+  debit_value: DB
+  credit_value: CR
   include_raw: true              # adds _raw: every parsed field incl. tags, page, value date
   field_map:                     # target recon column : parsed field
     itemdate: posting_date

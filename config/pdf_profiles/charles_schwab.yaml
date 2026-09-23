@@ -1,6 +1,8 @@
 name: charles_schwab
 detect: Charles Schwab
 mode: transaction_table
+static_fields:
+  currency: "$"
 geometry:
   row_tolerance: 0.004
   columns:
@@ -52,6 +54,7 @@ output:
   include_raw: true
   field_map:
     subaccount: account_number
+    currency: currency
     openingbalance: opening_balance
     closingbalance: closing_balance
     openingbalancedate: period_start_date

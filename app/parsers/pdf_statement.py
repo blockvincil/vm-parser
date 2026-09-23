@@ -378,6 +378,9 @@ class TransactionTableMachine:
         # opening_balance
         # closing_balance
         self.doc: dict[str, Any] = {}
+        self.doc.update(
+            profile.get("static_fields", {})
+        )
 
         self.in_transactions = False
 
@@ -645,9 +648,8 @@ class TransactionTableMachine:
     # ------------------------------------------------------------------
     # transaction handling
     # ------------------------------------------------------------------
-
     def _close_txn(
-        self
+            self
     ) -> list[dict]:
 
         txn = self.current_txn
@@ -658,17 +660,16 @@ class TransactionTableMachine:
 
         amount = txn.get("amount")
 
-        # Ignore accidental / empty rows.
-        #
-        # FIX:
-        # The transaction stores "description_lines",
-        # not "description".
+        # Do not emit transactions without an amount.
+        if amount is None:
+            return []
+
+        # Ignore completely empty rows.
         if not any([
             txn.get("category"),
             txn.get("action"),
             txn.get("symbol"),
-            txn.get("description_lines"),
-            amount is not None
+            txn.get("description_lines")
         ]):
             return []
 
@@ -689,40 +690,101 @@ class TransactionTableMachine:
             "record_type": "transaction",
             "seq": self.seq,
 
-            "posting_date": txn.get(
-                "date"
-            ),
+            "posting_date": txn.get("date"),
 
-            "category": txn.get(
-                "category"
-            ),
+            "category": txn.get("category"),
 
-            "action": txn.get(
-                "action"
-            ),
+            "action": txn.get("action"),
 
-            "symbol": txn.get(
-                "symbol"
-            ),
+            "symbol": txn.get("symbol"),
 
             "description": description,
 
-            "amount": (
-                str(amount)
-                if amount is not None
-                else None
-            ),
+            "amount": str(amount),
 
-            "dbcr": self._dbcr(
-                amount
-            ),
+            "dbcr": self._dbcr(amount),
 
-            "page": txn.get(
-                "page"
-            )
+            "page": txn.get("page")
         }
 
         return [rec]
+    # def _close_txn(
+    #     self
+    # ) -> list[dict]:
+    #
+    #     txn = self.current_txn
+    #     self.current_txn = None
+    #
+    #     if not txn:
+    #         return []
+    #
+    #     amount = txn.get("amount")
+    #
+    #     # Ignore accidental / empty rows.
+    #     #
+    #     # FIX:
+    #     # The transaction stores "description_lines",
+    #     # not "description".
+    #     if not any([
+    #         txn.get("category"),
+    #         txn.get("action"),
+    #         txn.get("symbol"),
+    #         txn.get("description_lines"),
+    #         amount is not None
+    #     ]):
+    #         return []
+    #
+    #     self.seq += 1
+    #
+    #     description = self._clean(
+    #         " ".join(
+    #             txn.get(
+    #                 "description_lines",
+    #                 []
+    #             )
+    #         )
+    #     )
+    #
+    #     rec = {
+    #         **self.doc,
+    #
+    #         "record_type": "transaction",
+    #         "seq": self.seq,
+    #
+    #         "posting_date": txn.get(
+    #             "date"
+    #         ),
+    #
+    #         "category": txn.get(
+    #             "category"
+    #         ),
+    #
+    #         "action": txn.get(
+    #             "action"
+    #         ),
+    #
+    #         "symbol": txn.get(
+    #             "symbol"
+    #         ),
+    #
+    #         "description": description,
+    #
+    #         "amount": (
+    #             str(amount)
+    #             if amount is not None
+    #             else None
+    #         ),
+    #
+    #         "dbcr": self._dbcr(
+    #             amount
+    #         ),
+    #
+    #         "page": txn.get(
+    #             "page"
+    #         )
+    #     }
+    #
+    #     return [rec]
 
     def _start_txn(
         self,

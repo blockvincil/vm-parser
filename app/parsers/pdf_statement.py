@@ -319,49 +319,1154 @@ class StatementMachine:
                   f"{self.unparsed} unparsed rows")
         return out
 
+class TransactionTableMachine:
+    """
+    Generic transaction-table statement parser.
+
+    Intended for statements such as Charles Schwab where:
+
+      - account / statement period are document-level fields
+      - transactions appear inside a Transaction Details section
+      - the date may appear only on the first transaction of a date
+      - following transactions inherit the previous date
+      - descriptions can continue across multiple visual rows
+      - categories can wrap across rows, e.g. "Other" + "Activity"
+    """
+
+    def __init__(self, profile: dict, warn):
+        self.p = profile
+        self.warn = warn
+
+        self.out = profile["output"]
+        self.geometry = profile["geometry"]
+
+        # Document-level fields from YAML.
+        self.docrx = {
+            k: re.compile(v, re.I)
+            for k, v in profile.get("doc_fields", {}).items()
+        }
+
+        section = profile["transaction_section"]
+
+        self.start_rx = re.compile(
+            section["start"],
+            re.I
+        )
+
+        self.continue_rx = (
+            re.compile(section["continue"], re.I)
+            if section.get("continue")
+            else None
+        )
+
+        self.end_rx = [
+            re.compile(v, re.I)
+            for v in section.get("end", [])
+        ]
+
+        self.skip = [
+            re.compile(v, re.I)
+            for v in profile.get("skip_rows", [])
+        ]
+
+        # Document-level values:
+        #
+        # account_number
+        # statement_period
+        # period_start_date
+        # period_end_date
+        # opening_balance
+        # closing_balance
+        self.doc: dict[str, Any] = {}
+
+        self.in_transactions = False
+
+        # Track page changes while a transaction table is active.
+        # Profiles with a continuation heading (for example Schwab)
+        # should ignore repeated page headers until that heading appears.
+        self.last_page: int | None = None
+        self.awaiting_continuation = False
+
+        # Schwab prints the date only on the first transaction
+        # belonging to that date.
+        self.current_date: str | None = None
+
+        self.current_txn: dict[str, Any] | None = None
+
+        # Used for rows such as:
+        #
+        # Other
+        # Activity   Redemption ...
+        self.pending_category: str | None = None
+
+        self.seq = 0
+        self.unparsed = 0
+
+        # Set after we encounter Transactions - Summary.
+        # The next value row contains Beginning Cash / Ending Cash.
+        self.summary_pending = False
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _clean(value: str | None) -> str:
+        if not value:
+            return ""
+
+        return re.sub(
+            r"\s+",
+            " ",
+            value
+        ).strip()
+
+    def _column(
+        self,
+        row: Row,
+        name: str
+    ) -> str:
+        """
+        Read one logical column using x-coordinate boundaries
+        configured in the YAML.
+
+        Example:
+
+            geometry:
+              columns:
+                date: [0.00, 0.055]
+                category: [0.055, 0.125]
+                action: [0.125, 0.24]
+        """
+
+        cols = self.geometry.get(
+            "columns",
+            {}
+        )
+
+        bounds = cols.get(name)
+
+        if not bounds:
+            return ""
+
+        start, end = bounds
+
+        return self._clean(
+            row.text(start, end)
+        )
+
+    def _extract_doc_fields(
+        self,
+        full: str
+    ):
+        """
+        Extract values configured under doc_fields.
+
+        Each regex must expose the value using:
+
+            (?P<v>...)
+        """
+
+        for key, rx in self.docrx.items():
+
+            if key in self.doc:
+                continue
+
+            m = rx.search(full)
+
+            if not m:
+                continue
+
+            try:
+                value = m.group("v")
+            except (IndexError, KeyError):
+                continue
+
+            if value:
+                self.doc[key] = value.strip()
+
+    def _parse_period(self):
+        """
+        Convert:
+
+            July 1-31, 2026
+
+        into:
+
+            period_start_date = 2026-07-01
+            period_end_date   = 2026-07-31
+        """
+
+        # Already parsed.
+        if (
+            self.doc.get("period_start_date")
+            and self.doc.get("period_end_date")
+        ):
+            return
+
+        value = self.doc.get(
+            "statement_period"
+        )
+
+        if not value:
+            return
+
+        rx = re.compile(
+            r"(?P<month>[A-Za-z]+)\s*"
+            r"(?P<start>\d{1,2})\s*-\s*"
+            r"(?P<end>\d{1,2}),\s*"
+            r"(?P<year>\d{4})"
+        )
+
+        m = rx.search(value)
+
+        if not m:
+            return
+
+        try:
+            month = m.group("month")
+            year = m.group("year")
+
+            start = datetime.strptime(
+                f"{month} "
+                f"{m.group('start')}, "
+                f"{year}",
+                "%B %d, %Y"
+            ).date()
+
+            end = datetime.strptime(
+                f"{month} "
+                f"{m.group('end')}, "
+                f"{year}",
+                "%B %d, %Y"
+            ).date()
+
+            self.doc[
+                "period_start_date"
+            ] = start.isoformat()
+
+            self.doc[
+                "period_end_date"
+            ] = end.isoformat()
+
+        except ValueError:
+            self.warn(
+                f"unable to parse statement period: {value}"
+            )
+
+    @staticmethod
+    def _parse_item_date(
+        value: str | None,
+        year: int | None
+    ) -> str | None:
+        """
+        Convert:
+
+            07/06
+
+        into:
+
+            2026-07-06
+
+        using the statement-period year.
+        """
+
+        if not value:
+            return None
+
+        value = value.strip()
+
+        if not re.fullmatch(
+            r"\d{1,2}/\d{1,2}",
+            value
+        ):
+            return None
+
+        if year is None:
+            return value
+
+        try:
+            dt = datetime.strptime(
+                f"{value}/{year}",
+                "%m/%d/%Y"
+            )
+
+            return dt.date().isoformat()
+
+        except ValueError:
+            return None
+
+    def _statement_year(
+        self
+    ) -> int | None:
+
+        end = self.doc.get(
+            "period_end_date"
+        )
+
+        if not end:
+            self._parse_period()
+
+            end = self.doc.get(
+                "period_end_date"
+            )
+
+        if not end:
+            return None
+
+        try:
+            return datetime.strptime(
+                end,
+                "%Y-%m-%d"
+            ).year
+
+        except ValueError:
+            return None
+
+    def _dbcr(
+        self,
+        amount: Decimal | None
+    ) -> str | None:
+
+        if amount is None:
+            return None
+
+        if amount < 0:
+            return self.out.get(
+                "debit_value",
+                "DB"
+            )
+
+        return self.out.get(
+            "credit_value",
+            "CR"
+        )
+
+    # ------------------------------------------------------------------
+    # transaction handling
+    # ------------------------------------------------------------------
+
+    def _close_txn(
+        self
+    ) -> list[dict]:
+
+        txn = self.current_txn
+        self.current_txn = None
+
+        if not txn:
+            return []
+
+        amount = txn.get("amount")
+
+        # Ignore accidental / empty rows.
+        #
+        # FIX:
+        # The transaction stores "description_lines",
+        # not "description".
+        if not any([
+            txn.get("category"),
+            txn.get("action"),
+            txn.get("symbol"),
+            txn.get("description_lines"),
+            amount is not None
+        ]):
+            return []
+
+        self.seq += 1
+
+        description = self._clean(
+            " ".join(
+                txn.get(
+                    "description_lines",
+                    []
+                )
+            )
+        )
+
+        rec = {
+            **self.doc,
+
+            "record_type": "transaction",
+            "seq": self.seq,
+
+            "posting_date": txn.get(
+                "date"
+            ),
+
+            "category": txn.get(
+                "category"
+            ),
+
+            "action": txn.get(
+                "action"
+            ),
+
+            "symbol": txn.get(
+                "symbol"
+            ),
+
+            "description": description,
+
+            "amount": (
+                str(amount)
+                if amount is not None
+                else None
+            ),
+
+            "dbcr": self._dbcr(
+                amount
+            ),
+
+            "page": txn.get(
+                "page"
+            )
+        }
+
+        return [rec]
+
+    def _start_txn(
+        self,
+        row: Row,
+        date_text: str,
+        category: str,
+        action: str,
+        symbol: str,
+        description: str,
+        amount_text: str
+    ) -> list[dict]:
+
+        # Finish the previous transaction first.
+        out = self._close_txn()
+
+        # If this transaction has a date,
+        # update the carried-forward date.
+        if date_text:
+
+            parsed_date = self._parse_item_date(
+                date_text,
+                self._statement_year()
+            )
+
+            if parsed_date:
+                self.current_date = parsed_date
+
+        amount = None
+
+        if amount_text:
+
+            amount_match = _AMT.search(
+                amount_text
+            )
+
+            if amount_match:
+                amount = to_dec(
+                    amount_match.group(0)
+                )
+
+        self.current_txn = {
+            "date": self.current_date,
+
+            "category": (
+                category or None
+            ),
+
+            "action": (
+                action or None
+            ),
+
+            "symbol": (
+                symbol or None
+            ),
+
+            "description_lines": (
+                [description]
+                if description
+                else []
+            ),
+
+            "amount": amount,
+
+            "page": row.page
+        }
+
+        return out
+
+    # ------------------------------------------------------------------
+    # cash summary
+    # ------------------------------------------------------------------
+
+    def _process_cash_summary(
+        self,
+        row: Row
+    ) -> bool:
+        """
+        Extract Beginning Cash / Ending Cash.
+
+        Important:
+        Only parse real money values matching _AMT.
+
+        This prevents dates such as 07/01 from being
+        interpreted by to_dec() as 701.
+        """
+
+        opening = self._column(
+            row,
+            "summary_opening"
+        )
+
+        closing = self._column(
+            row,
+            "summary_closing"
+        )
+
+        opening_match = (
+            _AMT.search(opening)
+            if opening
+            else None
+        )
+
+        closing_match = (
+            _AMT.search(closing)
+            if closing
+            else None
+        )
+
+        opening_amt = (
+            to_dec(
+                opening_match.group(0)
+            )
+            if opening_match
+            else None
+        )
+
+        closing_amt = (
+            to_dec(
+                closing_match.group(0)
+            )
+            if closing_match
+            else None
+        )
+
+        if opening_amt is not None:
+            self.doc[
+                "opening_balance"
+            ] = str(opening_amt)
+
+        if closing_amt is not None:
+            self.doc[
+                "closing_balance"
+            ] = str(closing_amt)
+
+        found = (
+            opening_amt is not None
+            or closing_amt is not None
+        )
+
+        if found:
+            self.summary_pending = False
+
+        return found
+
+    # ------------------------------------------------------------------
+    # main row processing
+    # ------------------------------------------------------------------
+
+    def feed(
+        self,
+        row: Row
+    ) -> list[dict]:
+
+        full = self._clean(
+            row.text(0, 1)
+        )
+
+        # --------------------------------------------------------------
+        # page-break handling
+        # --------------------------------------------------------------
+        #
+        # Schwab repeats account/statement headers at the top of page 5
+        # before "Transaction Details (continued)".  Without this guard,
+        # those page-header rows can be appended to the previous transaction
+        # or even emitted as fake transactions.
+
+        if self.last_page is None:
+            self.last_page = row.page
+
+        elif row.page != self.last_page:
+            self.last_page = row.page
+
+            if self.in_transactions and self.continue_rx:
+                self.in_transactions = False
+                self.awaiting_continuation = True
+
+        if not full:
+            return []
+
+        # --------------------------------------------------------------
+        # document-level fields
+        # --------------------------------------------------------------
+
+        self._extract_doc_fields(
+            full
+        )
+
+        self._parse_period()
+
+        # --------------------------------------------------------------
+        # page continuation gate
+        # --------------------------------------------------------------
+        #
+        # While waiting for the repeated transaction heading on the new
+        # page, ignore page number/account/statement-period header rows.
+
+        if self.awaiting_continuation:
+
+            # Some PDFs split "Transaction Details (continued)" into
+            # two visual rows: "Transaction Details" and "(continued)".
+            # Treat either the normal section heading or the explicit
+            # continuation heading as the resume point.
+            if (
+                self.start_rx.search(full)
+                or (
+                    self.continue_rx
+                    and self.continue_rx.search(full)
+                )
+            ):
+                self.awaiting_continuation = False
+                self.in_transactions = True
+
+            return []
+
+        # --------------------------------------------------------------
+        # ignored rows
+        # --------------------------------------------------------------
+
+        if any(
+            rx.search(full)
+            for rx in self.skip
+        ):
+            return []
+
+        # --------------------------------------------------------------
+        # cash summary
+        # --------------------------------------------------------------
+
+        summary = self.p.get(
+            "cash_summary",
+            {}
+        )
+
+        if summary:
+
+            start_rx = summary.get(
+                "start"
+            )
+
+            if (
+                start_rx
+                and re.search(
+                    start_rx,
+                    full,
+                    re.I
+                )
+            ):
+                self.summary_pending = True
+
+                # Do not try to parse the heading itself.
+                return []
+
+            if self.summary_pending:
+
+                if self._process_cash_summary(
+                    row
+                ):
+                    return []
+
+        # --------------------------------------------------------------
+        # transaction section start / continuation
+        # --------------------------------------------------------------
+
+        if self.start_rx.search(full):
+
+            self.in_transactions = True
+            return []
+
+        if (
+            self.continue_rx
+            and self.continue_rx.search(full)
+        ):
+
+            self.in_transactions = True
+            return []
+
+        # --------------------------------------------------------------
+        # transaction section end
+        # --------------------------------------------------------------
+
+        if (
+            self.in_transactions
+            and any(
+                rx.search(full)
+                for rx in self.end_rx
+            )
+        ):
+            self.in_transactions = False
+
+            return self._close_txn()
+
+        if not self.in_transactions:
+            return []
+
+        # --------------------------------------------------------------
+        # repeated table header
+        # --------------------------------------------------------------
+
+        if re.search(
+            r"\bDate\b.*\bCategory\b.*\bAction\b",
+            full,
+            re.I
+        ):
+            return []
+
+        # --------------------------------------------------------------
+        # extract configured columns
+        # --------------------------------------------------------------
+
+        date_text = self._column(
+            row,
+            "date"
+        )
+
+        category = self._column(
+            row,
+            "category"
+        )
+
+        action = self._column(
+            row,
+            "action"
+        )
+
+        symbol = self._column(
+            row,
+            "symbol"
+        )
+
+        description = self._column(
+            row,
+            "description"
+        )
+
+        amount_text = self._column(
+            row,
+            "amount"
+        )
+
+        date_is_valid = bool(
+            re.fullmatch(
+                r"\d{1,2}/\d{1,2}",
+                date_text or ""
+            )
+        )
+
+        # --------------------------------------------------------------
+        # wrapped category
+        # --------------------------------------------------------------
+        #
+        # Schwab can have:
+        #
+        #     Other
+        #     Activity   Redemption ...
+        #
+        # "Other" belongs to the NEXT transaction.
+        # --------------------------------------------------------------
+
+        category_continuations = {
+            str(v).strip().lower()
+            for v in self.p.get(
+                "transaction_section", {}
+            ).get(
+                "category_continuations", []
+            )
+        }
+
+        # Profile-defined category continuation.
+        #
+        # Schwab renders the single logical category "Other Activity" as:
+        #
+        #     Other      Redemption ...
+        #     Activity   **MATURED**
+        #
+        # The second visual row can also contain description text, so this
+        # check intentionally allows description while requiring no new
+        # date/action/symbol/amount.
+        is_category_continuation = bool(
+            self.current_txn
+            and category
+            and category.strip().lower() in category_continuations
+            and not date_is_valid
+            and not action
+            and not symbol
+            and not amount_text
+        )
+
+        if is_category_continuation:
+
+            self.current_txn["category"] = self._clean(
+                f"{self.current_txn.get('category') or ''} "
+                f"{category}"
+            )
+
+            if description:
+                self.current_txn[
+                    "description_lines"
+                ].append(description)
+
+            return []
+
+        only_category = bool(
+            category
+            and not date_is_valid
+            and not action
+            and not symbol
+            and not description
+            and not amount_text
+        )
+
+        if only_category:
+
+            # Generic fallback for layouts where a category appears alone
+            # before the next transaction row.
+            out = self._close_txn()
+
+            self.pending_category = (
+                f"{self.pending_category or ''} "
+                f"{category}"
+            ).strip()
+
+            return out
+
+        # If we previously collected:
+        #
+        # Other
+        #
+        # and this row contains:
+        #
+        # Activity  Redemption ...
+        #
+        # combine them.
+        if self.pending_category:
+
+            category = (
+                f"{self.pending_category} "
+                f"{category or ''}"
+            ).strip()
+
+            self.pending_category = None
+
+        # --------------------------------------------------------------
+        # identify new transaction
+        # --------------------------------------------------------------
+
+        # A transaction may start without a date.
+        #
+        # Example:
+        #
+        # 07/06 Sale ...
+        #       Withdrawal Funds Paid ...
+        #
+        # Withdrawal inherits 07/06.
+        new_txn = bool(
+            date_is_valid
+            or category
+            or action
+        )
+
+        if new_txn:
+
+            return self._start_txn(
+                row=row,
+
+                date_text=(
+                    date_text
+                    if date_is_valid
+                    else ""
+                ),
+
+                category=category,
+                action=action,
+                symbol=symbol,
+                description=description,
+                amount_text=amount_text
+            )
+
+        # --------------------------------------------------------------
+        # continuation of previous transaction
+        # --------------------------------------------------------------
+
+        if self.current_txn:
+
+            continuation = " ".join(
+                value
+                for value in [
+                    symbol,
+                    description
+                ]
+                if value
+            ).strip()
+
+            if continuation:
+
+                self.current_txn[
+                    "description_lines"
+                ].append(
+                    continuation
+                )
+
+            # Sometimes the amount is printed
+            # on a following visual row.
+            if (
+                self.current_txn.get(
+                    "amount"
+                ) is None
+                and amount_text
+            ):
+
+                amount_match = _AMT.search(
+                    amount_text
+                )
+
+                if amount_match:
+
+                    amount = to_dec(
+                        amount_match.group(0)
+                    )
+
+                    if amount is not None:
+
+                        self.current_txn[
+                            "amount"
+                        ] = amount
+
+            return []
+
+        # --------------------------------------------------------------
+        # unmatched transaction row
+        # --------------------------------------------------------------
+
+        self.unparsed += 1
+
+        if self.unparsed <= 50:
+
+            self.warn(
+                f"unparsed transaction row "
+                f"p{row.page}: "
+                f"{full[:120]}"
+            )
+
+        return []
+
+    # ------------------------------------------------------------------
+    # finish
+    # ------------------------------------------------------------------
+
+    def finish(
+        self
+    ) -> list[dict]:
+
+        out = self._close_txn()
+
+        self.warn(
+            f"SUMMARY: transaction-table parser, "
+            f"{self.seq} transactions, "
+            f"{self.unparsed} unparsed rows"
+        )
+
+        return out
 
 class PdfStatementParser(BaseParser):
-    def __init__(self, settings, request, pdf_cfg, profile: dict):
-        super().__init__(settings, request)
-        self.cfg, self.profile = pdf_cfg, profile
-        self.engine = f"statement:{profile['name']}:{pdf_cfg.engine}"
+
+    def __init__(
+        self,
+        settings,
+        request,
+        pdf_cfg,
+        profile: dict
+    ):
+        super().__init__(
+            settings,
+            request
+        )
+
+        self.cfg = pdf_cfg
+        self.profile = profile
+
+        self.engine = (
+            f"statement:"
+            f"{profile['name']}:"
+            f"{pdf_cfg.engine}"
+        )
 
     def _pages(self, path):
+
         if self.cfg.engine == "textract":
+
             from .pdf_textract import PdfTextractParser
-            return textract_pages(PdfTextractParser(self.s, self.req, self.cfg)._blocks(path))
+
+            return textract_pages(
+                PdfTextractParser(
+                    self.s,
+                    self.req,
+                    self.cfg
+                )._blocks(path)
+            )
+
         return native_pages(path)
 
-    def records(self, path) -> Iterator[dict]:
-        m = StatementMachine(self.profile, self.warnings.append)
-        tol = self.profile["geometry"]["row_tolerance"]
-        for pno, words in enumerate(self._pages(path), start=1):
-            for row in to_rows(words, pno, tol):
-                yield from m.feed(row)
+    def records(
+        self,
+        path
+    ) -> Iterator[dict]:
+
+        mode = self.profile.get(
+            "mode",
+            "bai_statement"
+        )
+
+        if mode == "transaction_table":
+
+            m = TransactionTableMachine(
+                self.profile,
+                self.warnings.append
+            )
+
+        else:
+
+            m = StatementMachine(
+                self.profile,
+                self.warnings.append
+            )
+
+        tol = self.profile[
+            "geometry"
+        ]["row_tolerance"]
+
+        for pno, words in enumerate(
+            self._pages(path),
+            start=1
+        ):
+
+            for row in to_rows(
+                words,
+                pno,
+                tol
+            ):
+
+                yield from m.feed(
+                    row
+                )
+
         yield from m.finish()
 
     def tables(self, path):
-        fmap: dict[str, str] = self.profile["output"]["field_map"]
-        headers = list(fmap) + ["record_type"] + (["_raw"] if self.profile["output"].get("include_raw") else [])
+
+        fmap: dict[str, str] = (
+            self.profile[
+                "output"
+            ]["field_map"]
+        )
+
+        headers = (
+            list(fmap)
+            + ["record_type"]
+            + (
+                ["_raw"]
+                if self.profile[
+                    "output"
+                ].get("include_raw")
+                else []
+            )
+        )
 
         def rows():
+
             for rec in self.records(path):
-                row = [rec.get(src) for src in fmap.values()] + [rec["record_type"]]
+
+                row = [
+                    rec.get(src)
+                    for src
+                    in fmap.values()
+                ] + [
+                    rec["record_type"]
+                ]
+
                 if "_raw" in headers:
                     row.append(rec)
+
                 yield row
-        yield RawTable(headers, rows(), 1, {"premapped": True, "profile": self.profile["name"]})
 
+        yield RawTable(
+            headers,
+            rows(),
+            1,
+            {
+                "premapped": True,
+                "profile": self.profile[
+                    "name"
+                ]
+            }
+        )
 
-def detect_profile(path: str, profiles: dict[str, dict], engine: str) -> dict | None:
-    """Match profile.detect against page-1 text (text layer; scanned docs need an explicit profile)."""
+def detect_profile(
+    path: str,
+    profiles: dict[str, dict],
+    engine: str
+) -> dict | None:
+    """
+    Match profile.detect against the first page text.
+
+    Example:
+
+        northern_trust_daily.yaml
+            detect: "Northern Trust Treasury Passport"
+
+        charles_schwab.yaml
+            detect: "Charles Schwab"
+
+    PDFs with a text layer can be detected automatically.
+    Scanned PDFs should normally specify the profile explicitly.
+    """
+
     try:
         import pdfplumber
+
         with pdfplumber.open(path) as pdf:
-            text = pdf.pages[0].extract_text() or "" if pdf.pages else ""
+
+            if not pdf.pages:
+                return None
+
+            text = (
+                pdf.pages[0].extract_text()
+                or ""
+            )
+
     except Exception:
         return None
-    for prof in profiles.values():
-        if prof.get("detect") and re.search(prof["detect"], text):
-            return prof
+
+    for profile in profiles.values():
+
+        detect = profile.get(
+            "detect"
+        )
+
+        if not detect:
+            continue
+
+        if re.search(
+            detect,
+            text,
+            re.I
+        ):
+            return profile
+
     return None

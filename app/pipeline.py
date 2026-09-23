@@ -121,12 +121,7 @@ def resolve_paths(
     return out
 
 
-def build_parser(
-    fmt: str,
-    req: ParseRequest,
-    s,
-    path: str | None = None
-):
+def build_parser(fmt: str, req: ParseRequest,s,path: str | None = None):
 
     if fmt == "csv":
         return CsvParser(s, req)
@@ -196,10 +191,7 @@ def _enrich( rec: dict,  req: ParseRequest,file_path: str | None,
             if file_path
             else None
         ),
-        "sourcetype": (
-            req.sourceName
-            or req.source
-        ),
+        "sourcetype": (req.sourceName  or req.source),
         "batch_id": batch_id,
         "process_date": date.today().isoformat(),
     }

@@ -18,6 +18,8 @@ skip_rows:
 doc_fields:                  # captured once from the page header
   reported_on: "Information Reported On:\\s*(?P<v>.+?)\\s+As Of"
   statement_period: "As Of:\\s*(?P<v>.+)$"
+  period_start_date: "As Of:\\s*(?P<v>[A-Za-z]{3} \\d{1,2}, \\d{4})\\s*-"
+  period_end_date: "As Of:\\s*[A-Za-z]{3} \\d{1,2}, \\d{4}\\s*-\\s*(?P<v>[A-Za-z]{3} \\d{1,2}, \\d{4})"
 
 rules:
   date: "^(?P<date>(January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}, \\d{4})$"
@@ -50,8 +52,8 @@ output:
   #   all         -> also write a balance row for every account-day (duplicates balances by design)
   #   none        -> transaction rows only
   balance_records: no_activity
-  debit_value: D
-  credit_value: C
+  debit_value: DB
+  credit_value: CR
   include_raw: true              # adds _raw: every parsed field incl. tags, page, value date
   field_map:                     # target recon column : parsed field
     itemdate: posting_date
@@ -68,6 +70,16 @@ output:
     closingbalance: closing_ledger
     closingbalancedate: posting_date
     closingbalancedbcr_3: closing_ledger_dbcr
+    account: account_number
+    account_name: account_name
+    opening_ledger_balance: opening_ledger
+    closing_ledger_balance: closing_ledger
+    item_date: posting_date
+    openeing_balance_date: posting_date
+    closing_balance_date: posting_date
+    dbcr_10: dbcr
+    period_start_date: period_start_date
+    period_end_date: period_end_date
 
 validation:                    # results go to job warnings; fail_on_error aborts the file
   control_totals: true         # sum/count of txns == "TOTALS FOR ACCOUNT" and "400/100 TOTAL" lines

@@ -11,17 +11,42 @@ _pool: ConnectionPool | None = None
 
 def pool() -> ConnectionPool:
     global _pool
+
     if _pool is None:
         c = get_settings().postgres
         schema = c.schema_
 
-        def configure(conn):                       # every pooled connection uses our schema
+        def configure(conn):
             conn.execute(f'SET search_path TO "{schema}", public')
             conn.commit()
 
-        _pool = ConnectionPool(c.conninfo(), min_size=c.pool_min, max_size=c.pool_max,
-                               configure=configure, open=True, timeout=c.connect_timeout + 5)
+        _pool = ConnectionPool(
+            c.conninfo(),
+            min_size=c.pool_min,
+            max_size=c.pool_max,
+            configure=configure,
+            check=ConnectionPool.check_connection,
+            open=True,
+            timeout=c.connect_timeout + 5,
+            max_idle=300,
+            max_lifetime=1200,
+            reconnect_timeout=30
+        )
+
     return _pool
+# def pool() -> ConnectionPool:
+#     global _pool
+#     if _pool is None:
+#         c = get_settings().postgres
+#         schema = c.schema_
+#
+#         def configure(conn):                       # every pooled connection uses our schema
+#             conn.execute(f'SET search_path TO "{schema}", public')
+#             conn.commit()
+#
+#         _pool = ConnectionPool(c.conninfo(), min_size=c.pool_min, max_size=c.pool_max,
+#                                configure=configure, open=True, timeout=c.connect_timeout + 5)
+#     return _pool
 
 
 def ping() -> str:

@@ -1,0 +1,65 @@
+name: charles_schwab
+detect: Charles Schwab
+mode: transaction_table
+static_fields:
+  currency: "$"
+geometry:
+  row_tolerance: 0.004
+  columns:
+    date:
+    - 0.015
+    - 0.055
+    category:
+    - 0.052
+    - 0.12
+    action:
+    - 0.115
+    - 0.215
+    symbol:
+    - 0.21
+    - 0.3
+    description:
+    - 0.3
+    - 0.525
+    amount:
+    - 0.79
+    - 0.9
+    summary_opening:
+    - 0.02
+    - 0.17
+    summary_closing:
+    - 0.85
+    - 0.99
+doc_fields:
+  account_number: (?P<v>\d{4}-\d{4})
+  statement_period: (?P<v>[A-Za-z]+\s*\d{1,2}\s*-\s*\d{1,2},\s*\d{4})
+cash_summary:
+  start: ^Transactions\s*-\s*Summary$
+transaction_section:
+  start: ^Transaction\s+Details$
+  continue: ^Transaction\s+Details\s*\(continued\)$
+  end:
+  - ^Total\s*Transactions
+  - ^Bank\s+Sweep\s+Activity$
+  category_continuations:
+  - Activity
+skip_rows:
+- ^\(continued\)$
+- ^Symbol/.*Price/Rate.*Charges/.*Realized
+- ^Date\s+Category\s+Action.*
+- ^Date\s*column\s*represents
+output:
+  debit_value: DB
+  credit_value: CR
+  include_raw: true
+  field_map:
+    subaccount: account_number
+    currency: currency
+    openingbalance: opening_balance
+    closingbalance: closing_balance
+    openingbalancedate: period_start_date
+    closingbalancedate: period_end_date
+    itemdate: posting_date
+    description: description
+    amount: amount
+    dbcr_10: dbcr
